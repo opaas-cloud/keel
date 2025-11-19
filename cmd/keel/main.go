@@ -1,12 +1,12 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"time"
-
-	"context"
 
 	kingpin "github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -197,7 +197,26 @@ func main() {
 		FieldLogger: log.WithField("context", "translator"),
 	}
 
-	buf := k8s.NewBuffer(&g, t, log.StandardLogger(), 128)
+	// Configure event buffer size, default to 2048 for large clusters
+	eventBufferSize := 2048
+	if os.Getenv(constants.EnvEventBufferSize) != "" {
+		parsedSize, err := strconv.Atoi(os.Getenv(constants.EnvEventBufferSize))
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err,
+				"value": os.Getenv(constants.EnvEventBufferSize),
+			}).Errorf("main: got error while parsing event buffer size, defaulting to: %d", eventBufferSize)
+		} else if parsedSize > 0 {
+			eventBufferSize = parsedSize
+		} else {
+			log.Warnf("main: invalid event buffer size (must be > 0), defaulting to: %d", eventBufferSize)
+		}
+	}
+	log.WithFields(log.Fields{
+		"buffer_size": eventBufferSize,
+	}).Info("configuring event buffer")
+
+	buf := k8s.NewBuffer(&g, t, log.StandardLogger(), eventBufferSize)
 	wl := log.WithField("context", "watch")
 	k8s.WatchDeployments(&g, implementer.Client(), wl, buf)
 	k8s.WatchStatefulSets(&g, implementer.Client(), wl, buf)

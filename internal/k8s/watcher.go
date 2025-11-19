@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"os"
+	"sync"
 	"time"
 
 	"github.com/keel-hq/keel/constants"
@@ -68,6 +69,12 @@ type buffer struct {
 	ev chan interface{}
 	logrus.StdLogger
 	rh cache.ResourceEventHandler
+
+	// Backpressure tracking
+	lastLogTime   time.Time
+	blockedCount  int64
+	blockedMutex  sync.Mutex
+	logInterval   time.Duration
 }
 
 type addEvent struct {
@@ -86,9 +93,11 @@ type deleteEvent struct {
 // NewBuffer returns a ResourceEventHandler which buffers and serialises ResourceEventHandler events.
 func NewBuffer(g *workgroup.Group, rh cache.ResourceEventHandler, log logrus.FieldLogger, size int) cache.ResourceEventHandler {
 	buf := &buffer{
-		ev:        make(chan interface{}, size),
-		StdLogger: log.WithField("context", "buffer"),
-		rh:        rh,
+		ev:          make(chan interface{}, size),
+		StdLogger:   log.WithField("context", "buffer"),
+		rh:          rh,
+		lastLogTime: time.Now(),
+		logInterval: 5 * time.Second, // Log at most once every 5 seconds
 	}
 	g.Add(buf.loop)
 	return buf
@@ -134,7 +143,18 @@ func (b *buffer) send(ev interface{}) {
 	case b.ev <- ev:
 		// all good
 	default:
-		b.Printf("event channel is full, len: %v, cap: %v", len(b.ev), cap(b.ev))
+		// Channel is full, track blocked events and log periodically
+		b.blockedMutex.Lock()
+		b.blockedCount++
+		shouldLog := time.Since(b.lastLogTime) >= b.logInterval
+		if shouldLog {
+			b.Printf("event channel is full, len: %v, cap: %v, blocked events since last log: %d", len(b.ev), cap(b.ev), b.blockedCount)
+			b.lastLogTime = time.Now()
+			b.blockedCount = 0
+		}
+		b.blockedMutex.Unlock()
+		
+		// Block until we can send (we don't want to lose events)
 		b.ev <- ev
 	}
 }

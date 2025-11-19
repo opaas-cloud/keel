@@ -61,3 +61,6 @@ const KeelLogoURL = "https://keel.sh/img/logo.png"
 
 // Env var to define a namespace that keel will scan - avoid scan over all the cluster -
 const EnvRestrictedNamespace = "RESTRICTED_NAMESPACE"
+
+// EnvEventBufferSize - size of the event buffer channel, defaults to 2048 for large clusters
+const EnvEventBufferSize = "EVENT_BUFFER_SIZE"
