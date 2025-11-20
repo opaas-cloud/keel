@@ -197,7 +197,13 @@ func main() {
 		FieldLogger: log.WithField("context", "translator"),
 	}
 
-	// Configure event buffer size, default to 2048 for large clusters
+	sizeStr := os.Getenv(constants.EnvEventBufferSize)
+
+	eventBufferSize, err := strconv.Atoi(sizeStr)
+	if err != nil {
+	    eventBufferSize = 2048
+	}
+
 	eventBufferSize := os.Getenv(constants.EnvEventBufferSize)
 	if os.Getenv(constants.EnvEventBufferSize) != "" {
 		parsedSize, err := strconv.Atoi(os.Getenv(constants.EnvEventBufferSize))
