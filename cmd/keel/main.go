@@ -198,7 +198,7 @@ func main() {
 	}
 
 	// Configure event buffer size, default to 2048 for large clusters
-	eventBufferSize := 2048
+	eventBufferSize := os.Getenv(constants.EnvEventBufferSize)
 	if os.Getenv(constants.EnvEventBufferSize) != "" {
 		parsedSize, err := strconv.Atoi(os.Getenv(constants.EnvEventBufferSize))
 		if err != nil {
