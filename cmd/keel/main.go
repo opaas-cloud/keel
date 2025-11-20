@@ -204,7 +204,6 @@ func main() {
 	    eventBufferSize = 2048
 	}
 
-	eventBufferSize := os.Getenv(constants.EnvEventBufferSize)
 	if os.Getenv(constants.EnvEventBufferSize) != "" {
 		parsedSize, err := strconv.Atoi(os.Getenv(constants.EnvEventBufferSize))
 		if err != nil {
