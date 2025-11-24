@@ -29,27 +29,30 @@ build-binaries:
 		-ldflags "$(LDFLAGS)" -osarch="linux/arm"
 
 build-arm:
+	@mkdir -p cmd/keel/release
 	cd cmd/keel && env CC=arm-linux-gnueabihf-gcc CGO_ENABLED=1 GOARCH=arm GOOS=linux go build -ldflags="$(ARMFLAGS)" -o release/keel-linux-arm
-	# disabling for now 64bit builds
-	# cd cmd/keel && env GOARCH=arm64 GOOS=linux go build -ldflags="$(ARMFLAGS)" -o release/keel-linux-aarc64
 
-armhf-latest:
+build-aarch64:
+	@mkdir -p cmd/keel/release
+	cd cmd/keel && env GOARCH=arm64 GOOS=linux go build -ldflags="$(ARMFLAGS)" -o release/keel-linux-aarch64
+
+armhf-latest: build-arm fetch-certs
 	docker build -t keelhq/keel-arm:latest -f Dockerfile.armhf .
 	docker push keelhq/keel-arm:latest
 
-aarch64-latest:
+aarch64-latest: build-aarch64 fetch-certs
 	docker build -t keelhq/keel-aarch64:latest -f Dockerfile.aarch64 .
 	docker push keelhq/keel-aarch64:latest
 
-armhf:
+armhf: build-arm fetch-certs
 	docker build -t keelhq/keel-arm:$(VERSION) -f Dockerfile.armhf .
 	# docker push keelhq/keel-arm:$(VERSION)
 
-aarch64:
+aarch64: build-aarch64 fetch-certs
 	docker build -t keelhq/keel-aarch64:$(VERSION) -f Dockerfile.aarch64 .
 	docker push keelhq/keel-aarch64:$(VERSION)
 
-arm: build-arm fetch-certs armhf aarch64
+arm: build-arm build-aarch64 fetch-certs armhf aarch64
 
 test:
 	go install github.com/mfridman/tparse@latest

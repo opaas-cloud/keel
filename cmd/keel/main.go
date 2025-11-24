@@ -217,11 +217,29 @@ func main() {
 			log.Warnf("main: invalid event buffer size (must be > 0), defaulting to: %d", eventBufferSize)
 		}
 	}
+
+	// Configure worker count for event processing, default to 4
+	eventWorkers := 4
+	if os.Getenv(constants.EnvEventWorkers) != "" {
+		parsedWorkers, err := strconv.Atoi(os.Getenv(constants.EnvEventWorkers))
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err,
+				"value": os.Getenv(constants.EnvEventWorkers),
+			}).Errorf("main: got error while parsing event workers, defaulting to: %d", eventWorkers)
+		} else if parsedWorkers > 0 {
+			eventWorkers = parsedWorkers
+		} else {
+			log.Warnf("main: invalid event workers (must be > 0), defaulting to: %d", eventWorkers)
+		}
+	}
+
 	log.WithFields(log.Fields{
 		"buffer_size": eventBufferSize,
+		"workers":     eventWorkers,
 	}).Info("configuring event buffer")
 
-	buf := k8s.NewBuffer(&g, t, log.StandardLogger(), eventBufferSize)
+	buf := k8s.NewBufferWithWorkers(&g, t, log.StandardLogger(), eventBufferSize, eventWorkers)
 	wl := log.WithField("context", "watch")
 	k8s.WatchDeployments(&g, implementer.Client(), wl, buf)
 	k8s.WatchStatefulSets(&g, implementer.Client(), wl, buf)

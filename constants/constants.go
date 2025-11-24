@@ -64,3 +64,6 @@ const EnvRestrictedNamespace = "RESTRICTED_NAMESPACE"
 
 // EnvEventBufferSize - size of the event buffer channel, defaults to 2048 for large clusters
 const EnvEventBufferSize = "EVENT_BUFFER_SIZE"
+
+// EnvEventWorkers - number of worker goroutines for event processing, defaults to 4
+const EnvEventWorkers = "EVENT_WORKERS"

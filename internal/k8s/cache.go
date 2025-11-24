@@ -35,25 +35,41 @@ func (cc *genericResourceCache) Add(grs ...*GenericResource) {
 		return
 	}
 	cc.Lock()
-	sort.Sort(genericResource(cc.values))
-	for _, gr := range grs {
-		cc.add(gr)
+	defer cc.Unlock()
+	
+	// Only sort if cache is not empty and we're adding multiple items
+	needsSort := len(cc.values) > 0 && len(grs) > 1
+	if needsSort {
+		sort.Sort(genericResource(cc.values))
 	}
-	cc.Unlock()
+	
+	for _, gr := range grs {
+		cc.addUnsafe(gr)
+	}
+	
+	// Sort once at the end if we added multiple items
+	if len(grs) > 1 {
+		sort.Sort(genericResource(cc.values))
+	}
 }
 
-// add adds c to the cache. If c is already present, the cached value of c is overwritten.
-// invariant: cc.values should be sorted on entry.
-func (cc *genericResourceCache) add(c *GenericResource) {
+// addUnsafe adds c to the cache without locking. Caller must hold the lock.
+// If c is already present, the cached value of c is overwritten.
+func (cc *genericResourceCache) addUnsafe(c *GenericResource) {
+	if len(cc.values) == 0 {
+		// Empty cache, just append
+		cc.values = append(cc.values, c)
+		return
+	}
+	
+	// Use binary search if cache is sorted, otherwise linear search
 	i := sort.Search(len(cc.values), func(i int) bool { return cc.values[i].Identifier >= c.Identifier })
 	if i < len(cc.values) && cc.values[i].Identifier == c.Identifier {
 		// c is already present, replace
 		cc.values[i] = c
 	} else {
-		// c is not present, append
+		// c is not present, append (will be sorted later if needed)
 		cc.values = append(cc.values, c)
-		// restort to convert append into insert
-		sort.Sort(genericResource(cc.values))
 	}
 }
 
@@ -64,20 +80,37 @@ func (cc *genericResourceCache) Remove(identifiers ...string) {
 		return
 	}
 	cc.Lock()
-	sort.Sort(genericResource(cc.values))
-	for _, n := range identifiers {
-		cc.remove(n)
+	defer cc.Unlock()
+	
+	// Only sort if cache is not empty and we're removing multiple items
+	if len(cc.values) > 0 && len(identifiers) > 1 {
+		sort.Sort(genericResource(cc.values))
 	}
-	cc.Unlock()
+	
+	for _, n := range identifiers {
+		cc.removeUnsafe(n)
+	}
 }
 
-// remove removes the named entry from the cache.
-// invariant: cc.values should be sorted on entry.
-func (cc *genericResourceCache) remove(identifier string) {
+// removeUnsafe removes the named entry from the cache without locking. Caller must hold the lock.
+func (cc *genericResourceCache) removeUnsafe(identifier string) {
+	if len(cc.values) == 0 {
+		return
+	}
+	
+	// Use binary search if cache might be sorted, otherwise linear search
 	i := sort.Search(len(cc.values), func(i int) bool { return cc.values[i].Identifier >= identifier })
 	if i < len(cc.values) && cc.values[i].Identifier == identifier {
-		// c is present, remove
+		// Found, remove
 		cc.values = append(cc.values[:i], cc.values[i+1:]...)
+	} else {
+		// Not found with binary search, try linear search (cache might not be sorted)
+		for j, v := range cc.values {
+			if v.Identifier == identifier {
+				cc.values = append(cc.values[:j], cc.values[j+1:]...)
+				return
+			}
+		}
 	}
 }
 

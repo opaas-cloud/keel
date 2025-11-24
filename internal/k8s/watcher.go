@@ -75,6 +75,9 @@ type buffer struct {
 	blockedCount  int64
 	blockedMutex  sync.Mutex
 	logInterval   time.Duration
+	
+	// Worker pool
+	workerCount int
 }
 
 type addEvent struct {
@@ -92,36 +95,73 @@ type deleteEvent struct {
 
 // NewBuffer returns a ResourceEventHandler which buffers and serialises ResourceEventHandler events.
 func NewBuffer(g *workgroup.Group, rh cache.ResourceEventHandler, log logrus.FieldLogger, size int) cache.ResourceEventHandler {
+	return NewBufferWithWorkers(g, rh, log, size, 0)
+}
+
+// NewBufferWithWorkers returns a ResourceEventHandler with configurable worker count.
+// If workers is 0 or negative, it defaults to runtime.NumCPU().
+func NewBufferWithWorkers(g *workgroup.Group, rh cache.ResourceEventHandler, log logrus.FieldLogger, size int, workers int) cache.ResourceEventHandler {
+	if workers <= 0 {
+		workers = 4 // Default to 4 workers for better throughput
+	}
 	buf := &buffer{
 		ev:          make(chan interface{}, size),
 		StdLogger:   log.WithField("context", "buffer"),
 		rh:          rh,
 		lastLogTime: time.Now(),
 		logInterval: 5 * time.Second, // Log at most once every 5 seconds
+		workerCount: workers,
 	}
-	g.Add(buf.loop)
+	// Start worker pool
+	for i := 0; i < workers; i++ {
+		g.Add(buf.loop)
+	}
 	return buf
 }
 
 func (b *buffer) loop(stop <-chan struct{}) {
-	b.Println("started")
-	defer b.Println("stopped")
-
+	// Use a ticker for batching events
+	ticker := time.NewTicker(10 * time.Millisecond) // Batch events every 10ms
+	defer ticker.Stop()
+	
+	var batch []interface{}
+	
 	for {
 		select {
 		case ev := <-b.ev:
-			switch ev := ev.(type) {
-			case *addEvent:
-				b.rh.OnAdd(ev.obj, ev.isInInitialList)
-			case *updateEvent:
-				b.rh.OnUpdate(ev.oldObj, ev.newObj)
-			case *deleteEvent:
-				b.rh.OnDelete(ev.obj)
-			default:
-				b.Printf("unhandled event type: %T: %v", ev, ev)
+			batch = append(batch, ev)
+			// Process batch if it gets too large (100 events)
+			if len(batch) >= 100 {
+				b.processBatch(batch)
+				batch = batch[:0]
+			}
+		case <-ticker.C:
+			// Process accumulated batch
+			if len(batch) > 0 {
+				b.processBatch(batch)
+				batch = batch[:0]
 			}
 		case <-stop:
+			// Process remaining events before stopping
+			if len(batch) > 0 {
+				b.processBatch(batch)
+			}
 			return
+		}
+	}
+}
+
+func (b *buffer) processBatch(batch []interface{}) {
+	for _, ev := range batch {
+		switch ev := ev.(type) {
+		case *addEvent:
+			b.rh.OnAdd(ev.obj, ev.isInInitialList)
+		case *updateEvent:
+			b.rh.OnUpdate(ev.oldObj, ev.newObj)
+		case *deleteEvent:
+			b.rh.OnDelete(ev.obj)
+		default:
+			b.Printf("unhandled event type: %T: %v", ev, ev)
 		}
 	}
 }
